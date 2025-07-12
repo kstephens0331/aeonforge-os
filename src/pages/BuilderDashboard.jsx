@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { supabase } from '../supabase';
+import { supabase } from '../supabase.js';
 
 export default function BuilderDashboard() {
   const [prompt, setPrompt] = useState('');
