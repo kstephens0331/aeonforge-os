@@ -1,14 +1,15 @@
-import React from 'react';
 import { Routes, Route } from 'react-router-dom';
-import BuilderDashboard from './pages/BuilderDashboard.jsx';
+import Layout from './pages/Layout.jsx';
+import Home from './pages/Home.jsx';
+import ChatView from './pages/ChatView.jsx';
 
-function App() {
+export default function App() {
   return (
     <Routes>
-      <Route path="/builder" element={<BuilderDashboard />} />
-      <Route path="/" element={<h1>Welcome to Aeonforge OS</h1>} />
+      <Route path="/" element={<Layout />}>
+        <Route index element={<Home />} />
+        <Route path="chat/:id" element={<ChatView />} />
+      </Route>
     </Routes>
   );
 }
-
-export default App;
