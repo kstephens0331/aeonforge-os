@@ -43,11 +43,13 @@ export default function ChatView() {
     setMessages(messageData || []);
   };
 
-  const runCompletion = async (thread) => {
+    const runCompletion = async (thread) => {
     const abortController = new AbortController();
     setController(abortController);
 
     try {
+      if (!API_BASE) throw new Error('VITE_BACKEND_URL is missing.');
+
       const res = await fetch(`${API_BASE}/api/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -60,13 +62,16 @@ export default function ChatView() {
         }),
       });
 
-      if (!res.ok) throw new Error(`API returned status ${res.status}`);
+      if (!res.ok) {
+        const fallbackText = await res.text();
+        throw new Error(`API error ${res.status}: ${fallbackText}`);
+      }
 
       const data = await res.json();
       return data.output;
     } catch (err) {
       console.error('Completion error:', err);
-      return '⚠️ Output stopped or failed.';
+      return '⚠️ Output failed. Check console and backend logs.';
     } finally {
       setController(null);
     }
