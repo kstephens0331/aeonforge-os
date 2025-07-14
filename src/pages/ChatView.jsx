@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase';
 import { exportChatToCSV, exportChatToPDF } from '../utils/exportUtils';
+import AiLoader from '../components/AiLoader';
 
 export default function ChatView() {
   const { id: chatId } = useParams();
@@ -43,13 +44,11 @@ export default function ChatView() {
     setMessages(messageData || []);
   };
 
-    const runCompletion = async (thread) => {
+  const runCompletion = async (thread) => {
     const abortController = new AbortController();
     setController(abortController);
 
     try {
-      if (!API_BASE) throw new Error('VITE_BACKEND_URL is missing.');
-
       const res = await fetch(`${API_BASE}/api/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -63,15 +62,15 @@ export default function ChatView() {
       });
 
       if (!res.ok) {
-        const fallbackText = await res.text();
-        throw new Error(`API error ${res.status}: ${fallbackText}`);
+        const errorText = await res.text();
+        throw new Error(`API error ${res.status}: ${errorText}`);
       }
 
       const data = await res.json();
       return data.output;
     } catch (err) {
       console.error('Completion error:', err);
-      return '⚠️ Output failed. Check console and backend logs.';
+      return '⚠️ Output stopped or failed.';
     } finally {
       setController(null);
     }
@@ -190,9 +189,9 @@ export default function ChatView() {
           </div>
         ))}
         {isLoading && (
-          <div className="text-sm text-gray-500 italic">
-            Generating response...
-            <button onClick={stopResponse} className="ml-2 text-red-600 text-xs underline">
+          <div className="flex items-center gap-4 text-sm text-gray-500 italic">
+            <AiLoader />
+            <button onClick={stopResponse} className="text-red-600 text-xs underline">
               Stop
             </button>
           </div>
