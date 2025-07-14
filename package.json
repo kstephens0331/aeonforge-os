@@ -11,8 +11,14 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.50.5",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.0",
+    "express": "^5.1.0",
+    "file-saver": "^2.0.5",
     "jspdf": "^3.0.1",
+    "openai": "^5.9.0",
     "react": "^19.1.0",
+    "react-csv": "^2.2.2",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.6.3"
   },

@@ -8,7 +8,7 @@ export default function MemoryEditor({ chatId, projectId }) {
   const [newMemory, setNewMemory] = useState('');
   const [search, setSearch] = useState('');
   const [scope, setScope] = useState('chat');
-  const [filter, setFilter] = useState('all'); // 'all', 'pinned', 'summary'
+  const [filter, setFilter] = useState('all');
 
   useEffect(() => {
     fetchMemory();
@@ -32,10 +32,8 @@ export default function MemoryEditor({ chatId, projectId }) {
 
   const applyFilters = () => {
     let data = [...memory];
-
     if (filter === 'pinned') data = data.filter((m) => m.pinned);
     if (filter === 'summary') data = data.filter((m) => m.summary);
-
     if (search.trim()) {
       const term = search.toLowerCase();
       data = data.filter(
@@ -44,7 +42,6 @@ export default function MemoryEditor({ chatId, projectId }) {
           (m.tags || []).some((t) => t.toLowerCase().includes(term))
       );
     }
-
     setFiltered(data);
   };
 
@@ -55,6 +52,9 @@ export default function MemoryEditor({ chatId, projectId }) {
       pinned: false,
       summary: false,
       tags: [],
+      clarity: null,
+      helpfulness: null,
+      actionability: null,
     };
     if (scope === 'chat' && chatId) insertData.chat_id = chatId;
     if (scope === 'project' && projectId) insertData.project_id = projectId;
@@ -84,11 +84,12 @@ export default function MemoryEditor({ chatId, projectId }) {
       pinned: m.pinned,
       summary: m.summary,
       tags: (m.tags || []).join(', '),
+      clarity: m.clarity ?? '',
+      helpfulness: m.helpfulness ?? '',
+      actionability: m.actionability ?? ''
     }));
-
     const header = Object.keys(rows[0]).join(',');
     const csv = [header, ...rows.map((r) => Object.values(r).join(','))].join('\n');
-
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -195,7 +196,7 @@ export default function MemoryEditor({ chatId, projectId }) {
 
             <input
               type="text"
-              className="w-full border px-2 py-1 text-xs rounded"
+              className="w-full border px-2 py-1 text-xs rounded mb-2"
               placeholder="Add tags (comma separated)"
               onBlur={(e) => {
                 const tags = e.target.value
@@ -205,6 +206,36 @@ export default function MemoryEditor({ chatId, projectId }) {
                 updateMemory(item.id, 'tags', tags);
               }}
             />
+
+            <div className="flex gap-2 text-xs mb-2">
+              <input
+                type="number"
+                placeholder="Clarity"
+                min="1"
+                max="5"
+                value={item.clarity ?? ''}
+                onChange={(e) => updateMemory(item.id, 'clarity', e.target.value)}
+                className="w-20 border px-1 py-0.5 rounded"
+              />
+              <input
+                type="number"
+                placeholder="Helpfulness"
+                min="1"
+                max="5"
+                value={item.helpfulness ?? ''}
+                onChange={(e) => updateMemory(item.id, 'helpfulness', e.target.value)}
+                className="w-24 border px-1 py-0.5 rounded"
+              />
+              <input
+                type="number"
+                placeholder="Actionability"
+                min="1"
+                max="5"
+                value={item.actionability ?? ''}
+                onChange={(e) => updateMemory(item.id, 'actionability', e.target.value)}
+                className="w-28 border px-1 py-0.5 rounded"
+              />
+            </div>
 
             <div className="flex justify-end mt-2">
               <button

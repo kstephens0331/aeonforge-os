@@ -1,134 +1,236 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase';
-import MemoryEditor from '../components/MemoryEditor';
-import { useParams } from 'react-router-dom';
+import { v4 as uuidv4 } from 'uuid';
+import { exportChatToCSV, exportChatToPDF } from '../utils/exportUtils';
 
 export default function ChatView() {
-  const { chatId } = useParams();
+  const { id: chatId } = useParams();
   const [chat, setChat] = useState(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [editingIdx, setEditingIdx] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [selectedModel, setSelectedModel] = useState('');
+  const [controller, setController] = useState(null);
+  const messagesEndRef = useRef(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
-    if (chatId) {
-      fetchChat();
-      fetchMessages();
-    }
+    fetchChat();
   }, [chatId]);
 
-  const fetchChat = async () => {
-    const { data } = await supabase.from('chats').select('*').eq('id', chatId).single();
-    setChat(data);
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const fetchMessages = async () => {
-    const { data } = await supabase
+  const fetchChat = async () => {
+    const { data: chatData } = await supabase.from('chats').select('*').eq('id', chatId).single();
+    setChat(chatData);
+
+    const { data: messageData } = await supabase
       .from('messages')
       .select('*')
       .eq('chat_id', chatId)
       .order('created_at', { ascending: true });
-    setMessages(data || []);
+
+    setMessages(messageData || []);
   };
 
-  const sendMessage = async () => {
-    if (!input.trim()) return;
-    setLoading(true);
+  const runCompletion = async (thread) => {
+    const abortController = new AbortController();
+    setController(abortController);
+
+    try {
+      const res = await fetch('/api/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: abortController.signal,
+        body: JSON.stringify({
+          messages: thread,
+          model: selectedModel || null,
+          project_id: chat?.project_id || null,
+          chat_id: chatId,
+        }),
+      });
+
+      const data = await res.json();
+      return data.output;
+    } catch (err) {
+      console.error('Completion error:', err);
+      return '⚠️ Output stopped or failed.';
+    } finally {
+      setController(null);
+    }
+  };
+
+  const sendMessage = async (editIdx = null) => {
     const trimmed = input.trim();
+    if (!trimmed) return;
+    setIsLoading(true);
 
-    const { data: userMsg } = await supabase
-      .from('messages')
-      .insert([{ chat_id: chatId, role: 'user', content: trimmed }])
-      .select()
-      .single();
+    const thread = [...messages];
 
-    setMessages((prev) => [...prev, userMsg, { role: 'assistant', content: '' }]);
+    // 🧠 Tool Matching Logic
+    const { data: tools } = await supabase.from('tools').select('*');
+    const matchedTool = tools.find((t) =>
+      (t.keywords || []).some((kw) => trimmed.toLowerCase().includes(kw.toLowerCase()))
+    );
 
-    const { data: memoryData } = await supabase
-      .from('memory')
-      .select('content')
-      .eq('chat_id', chatId);
+    if (matchedTool) {
+      console.log(`🧠 Suggested Tool Match: ${matchedTool.name}`);
 
-    const memoryBlock = memoryData?.map((m) => m.content).join('\n\n') || '';
+      // Optional: Navigate to tool builder UI
+      if (matchedTool.launch_path && chat?.project_id) {
+        const route = matchedTool.launch_path
+          .replace(':projectId', chat.project_id)
+          .replace(':projectName', encodeURIComponent(chat.project_name || 'Project'))
+          .replace(':toolName', encodeURIComponent(matchedTool.name));
+        navigate(route);
+        setIsLoading(false);
+        return;
+      }
+    }
 
-    const { data: thread } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('chat_id', chatId)
-      .order('created_at');
+    if (editIdx !== null) {
+      thread[editIdx].content = trimmed;
+      await supabase.from('messages').update({ content: trimmed }).eq('id', thread[editIdx].id);
+    } else {
+      const { data } = await supabase.from('messages').insert([{
+        id: uuidv4(),
+        chat_id: chatId,
+        role: 'user',
+        content: trimmed,
+      }]).select();
 
-    const messagesToSend = [
-      {
-        role: 'system',
-        content: `You have private memory for this chat only:\n\n${memoryBlock}`,
-      },
-      ...thread.map((m) => ({
-        role: m.role,
-        content: m.content,
-      })),
-    ];
-
-    // 🔒 Secure backend request to OpenAI
-    const response = await fetch('https://aeonforge-router-production.up.railway.app/api/ask', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: messagesToSend, model: chat?.model || 'gpt-4' }),
-    });
-
-    const result = await response.json();
-    const aiResponse = result.result;
-
-    await supabase.from('messages').insert([
-      { chat_id: chatId, role: 'assistant', content: aiResponse },
-    ]);
-
-    await supabase.from('memory').insert([
-      { chat_id: chatId, content: `Assistant replied: ${aiResponse}` },
-    ]);
-
-    setMessages((prev) => {
-      const updated = [...prev];
-      updated[updated.length - 1].content = aiResponse;
-      return updated;
-    });
+      thread.push(data[0]);
+    }
 
     setInput('');
-    setLoading(false);
+    setEditingIdx(null);
+
+    const aiReply = await runCompletion(thread);
+
+    const reply = {
+      id: uuidv4(),
+      chat_id: chatId,
+      role: 'assistant',
+      content: aiReply,
+    };
+
+    await supabase.from('messages').insert([reply]);
+
+    await supabase.from('memory').insert([{
+      chat_id: chatId,
+      project_id: chat?.project_id || null,
+      content: `${trimmed}\n---\n${aiReply}`,
+      tags: matchedTool ? [matchedTool.name] : [], // auto-tag memory by tool
+    }]);
+
+    await fetchChat();
+    setIsLoading(false);
+  };
+
+  const stopResponse = () => {
+    controller?.abort();
+    setController(null);
+    setIsLoading(false);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage(editingIdx);
+    }
+  };
+
+  const startEditing = (idx) => {
+    setInput(messages[idx].content);
+    setEditingIdx(idx);
   };
 
   return (
-    <div className="flex h-full">
-      <div className="flex flex-col flex-1">
-        <div className="p-6 overflow-y-auto space-y-4 flex-1">
-          {messages.map((msg, i) => (
-            <div key={i} className={`text-sm ${msg.role === 'user' ? 'text-blue-700' : 'text-gray-800'}`}>
-              <strong>{msg.role === 'user' ? 'You' : 'AI'}:</strong> {msg.content}
-            </div>
-          ))}
-        </div>
+    <div className="flex flex-col h-screen bg-gray-50">
+      <header className="bg-white shadow px-6 py-4 flex items-center justify-between">
+        <h2 className="text-xl font-bold text-gray-800">{chat?.title || 'Chat'}</h2>
+        <select
+          value={selectedModel}
+          onChange={(e) => setSelectedModel(e.target.value)}
+          className="text-sm border rounded px-2 py-1"
+        >
+          <option value="">Auto (Smart Routing)</option>
+          <option value="gpt-4">GPT-4</option>
+          <option value="claude-3-opus-20240229">Claude</option>
+          <option value="gemini-pro">Gemini</option>
+          <option value="mistral-tiny">Mistral</option>
+        </select>
+      </header>
 
-        <div className="p-4 border-t flex gap-2">
-          <input
-            type="text"
-            className="flex-grow border px-3 py-2 rounded text-sm"
-            placeholder="Type a message..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && !loading && sendMessage()}
-          />
-          <button
-            onClick={sendMessage}
-            disabled={loading}
-            className="bg-indigo-600 text-white px-4 py-2 rounded text-sm"
+      <main className="flex-1 overflow-y-auto p-6 space-y-4">
+        {messages.map((msg, idx) => (
+          <div
+            key={msg.id}
+            className={`max-w-3xl px-4 py-2 rounded-md ${
+              msg.role === 'user' ? 'bg-indigo-100 self-end ml-auto' : 'bg-gray-200 self-start mr-auto'
+            }`}
           >
-            {loading ? 'Thinking...' : 'Send'}
+            <p className="text-sm text-gray-800 whitespace-pre-wrap">{msg.content}</p>
+            {msg.role === 'user' && (
+              <button
+                onClick={() => startEditing(idx)}
+                className="text-xs text-indigo-600 mt-1"
+              >
+                ✏️ Edit & Rerun
+              </button>
+            )}
+          </div>
+        ))}
+        {isLoading && (
+          <div className="text-sm text-gray-500 italic">
+            Generating response...
+            <button onClick={stopResponse} className="ml-2 text-red-600 text-xs underline">
+              Stop
+            </button>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
+      </main>
+
+      <footer className="bg-white border-t px-6 py-4">
+        <textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Type a message..."
+          className="w-full resize-none border rounded px-3 py-2 text-sm h-20 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        />
+        <div className="text-right mt-2">
+          <button
+            onClick={() => sendMessage(editingIdx)}
+            className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"
+          >
+            {editingIdx !== null ? 'Save Edit & Run' : 'Send'}
           </button>
         </div>
-
-        <div className="p-4 border-t bg-gray-50">
-          <MemoryEditor chatId={chatId} />
+        <div className="flex gap-4 mt-4">
+          <button
+            onClick={() => exportChatToCSV(messages, `chat-${chatId}.csv`)}
+            className="text-sm text-gray-600 underline"
+          >
+            📁 Export CSV
+          </button>
+          <button
+            onClick={() => exportChatToPDF(messages, `chat-${chatId}.pdf`)}
+            className="text-sm text-gray-600 underline"
+          >
+            📄 Export PDF
+          </button>
         </div>
-      </div>
+      </footer>
     </div>
   );
 }
