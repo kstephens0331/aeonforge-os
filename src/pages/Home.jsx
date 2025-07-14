@@ -3,7 +3,7 @@ import MemoryViewer from '../components/MemoryViewer';
 import MultiModelTest from '../components/MultiModelTest';
 
 export default function Home() {
-  const exampleChatId = '00000000-0000-0000-0000-000000000000'; // replace with actual chat_id
+  const exampleChatId = null; // Do not pass invalid UUID
   const exampleProjectId = null;
 
   return (

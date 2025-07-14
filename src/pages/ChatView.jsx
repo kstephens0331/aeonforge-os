@@ -15,6 +15,8 @@ export default function ChatView() {
   const messagesEndRef = useRef(null);
   const navigate = useNavigate();
 
+  const cleanChatId = chatId?.split(':')[0];
+
   useEffect(() => {
     fetchChat();
   }, [chatId]);
@@ -28,13 +30,13 @@ export default function ChatView() {
   };
 
   const fetchChat = async () => {
-    const { data: chatData } = await supabase.from('chats').select('*').eq('id', chatId).single();
+    const { data: chatData } = await supabase.from('chats').select('*').eq('id', cleanChatId).single();
     setChat(chatData);
 
     const { data: messageData } = await supabase
       .from('messages')
       .select('*')
-      .eq('chat_id', chatId)
+      .eq('chat_id', cleanChatId)
       .order('created_at', { ascending: true });
 
     setMessages(messageData || []);
@@ -53,7 +55,7 @@ export default function ChatView() {
           messages: thread,
           model: selectedModel || null,
           project_id: chat?.project_id || null,
-          chat_id: chatId,
+          chat_id: cleanChatId,
         }),
       });
 
@@ -74,7 +76,6 @@ export default function ChatView() {
 
     const thread = [...messages];
 
-    // 🧠 Tool Matching Logic
     const { data: tools } = await supabase.from('tools').select('*');
     const matchedTool = tools.find((t) =>
       (t.keywords || []).some((kw) => trimmed.toLowerCase().includes(kw.toLowerCase()))
@@ -99,7 +100,7 @@ export default function ChatView() {
     } else {
       const { data: insertedMessage } = await supabase
         .from('messages')
-        .insert([{ chat_id: chatId, role: 'user', content: trimmed }])
+        .insert([{ chat_id: cleanChatId, role: 'user', content: trimmed }])
         .select();
 
       if (insertedMessage?.[0]) thread.push(insertedMessage[0]);
@@ -112,11 +113,11 @@ export default function ChatView() {
 
     const { data: replyMessage } = await supabase
       .from('messages')
-      .insert([{ chat_id: chatId, role: 'assistant', content: aiReply }])
+      .insert([{ chat_id: cleanChatId, role: 'assistant', content: aiReply }])
       .select();
 
     await supabase.from('memory').insert([{
-      chat_id: chatId,
+      chat_id: cleanChatId,
       project_id: chat?.project_id || null,
       content: `${trimmed}\n---\n${aiReply}`,
       tags: matchedTool ? [matchedTool.name] : [],
