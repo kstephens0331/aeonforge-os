@@ -60,6 +60,8 @@ export default function ChatView() {
         }),
       });
 
+      if (!res.ok) throw new Error(`API returned status ${res.status}`);
+
       const data = await res.json();
       return data.output;
     } catch (err) {
