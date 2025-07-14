@@ -16,6 +16,7 @@ export default function ChatView() {
   const navigate = useNavigate();
 
   const cleanChatId = chatId?.split(':')[0];
+  const API_BASE = import.meta.env.VITE_BACKEND_URL;
 
   useEffect(() => {
     fetchChat();
@@ -47,7 +48,7 @@ export default function ChatView() {
     setController(abortController);
 
     try {
-      const res = await fetch('/api/ask', {
+      const res = await fetch(`${API_BASE}/api/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: abortController.signal,
