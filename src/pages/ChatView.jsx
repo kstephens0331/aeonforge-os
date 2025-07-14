@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase';
-import { v4 as uuidv4 } from 'uuid';
 import { exportChatToCSV, exportChatToPDF } from '../utils/exportUtils';
 
 export default function ChatView() {
@@ -83,8 +82,6 @@ export default function ChatView() {
 
     if (matchedTool) {
       console.log(`🧠 Suggested Tool Match: ${matchedTool.name}`);
-
-      // Optional: Navigate to tool builder UI
       if (matchedTool.launch_path && chat?.project_id) {
         const route = matchedTool.launch_path
           .replace(':projectId', chat.project_id)
@@ -100,14 +97,12 @@ export default function ChatView() {
       thread[editIdx].content = trimmed;
       await supabase.from('messages').update({ content: trimmed }).eq('id', thread[editIdx].id);
     } else {
-      const { data } = await supabase.from('messages').insert([{
-        id: uuidv4(),
-        chat_id: chatId,
-        role: 'user',
-        content: trimmed,
-      }]).select();
+      const { data: insertedMessage } = await supabase
+        .from('messages')
+        .insert([{ chat_id: chatId, role: 'user', content: trimmed }])
+        .select();
 
-      thread.push(data[0]);
+      if (insertedMessage?.[0]) thread.push(insertedMessage[0]);
     }
 
     setInput('');
@@ -115,20 +110,16 @@ export default function ChatView() {
 
     const aiReply = await runCompletion(thread);
 
-    const reply = {
-      id: uuidv4(),
-      chat_id: chatId,
-      role: 'assistant',
-      content: aiReply,
-    };
-
-    await supabase.from('messages').insert([reply]);
+    const { data: replyMessage } = await supabase
+      .from('messages')
+      .insert([{ chat_id: chatId, role: 'assistant', content: aiReply }])
+      .select();
 
     await supabase.from('memory').insert([{
       chat_id: chatId,
       project_id: chat?.project_id || null,
       content: `${trimmed}\n---\n${aiReply}`,
-      tags: matchedTool ? [matchedTool.name] : [], // auto-tag memory by tool
+      tags: matchedTool ? [matchedTool.name] : [],
     }]);
 
     await fetchChat();

@@ -13,17 +13,23 @@ export default function MemoryViewer({ chatId, projectId }) {
     if (chatId || projectId) loadMemories();
   }, [chatId, projectId]);
 
-  async function loadMemories() {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('memory')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .match(projectId ? { project_id: projectId } : { chat_id: chatId });
-    if (error) console.error(error);
-    else setMemories(data);
-    setLoading(false);
-  }
+async function loadMemories() {
+  setLoading(true);
+
+  const cleanChatId = chatId?.split(':')[0]; // Strip off suffix if present
+  const filter = projectId ? { project_id: projectId } : { chat_id: cleanChatId };
+
+  const { data, error } = await supabase
+    .from('memory')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .match(filter);
+
+  if (error) console.error(error);
+  else setMemories(data);
+
+  setLoading(false);
+}
 
   const handleFieldChange = (id, field, value) => {
     setEditedMemories((prev) => ({

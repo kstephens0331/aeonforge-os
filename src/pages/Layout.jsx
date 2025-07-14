@@ -33,7 +33,11 @@ export default function Layout() {
 
   const createChat = async (projectId = null) => {
     const title = `Untitled Chat ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-    const { data, error } = await supabase.from('chats').insert([{ title, project_id: projectId }]).select();
+    const { data, error } = await supabase
+      .from('chats')
+      .insert([{ title, project_id: projectId }])
+      .select();
+
     if (!error && data?.[0]) {
       fetchSidebarData();
       navigate(`/chat/${data[0].id}`);
